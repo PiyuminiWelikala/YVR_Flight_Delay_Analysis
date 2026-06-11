@@ -53,14 +53,12 @@ yvr-flight-delay-analysis/
 ├── analysis/
 │   └── Final_Code_4830.Rmd                   ← full statistical analysis in R
 │
-├── docs/
-│   ├── Final_Presentation_4830.pptx          ← project presentation slides
-│   ├── Literature_Review.docx                ← literature review on PCA & flight delays
-│   ├── Weather_variable_description.docx     ← description of all weather variables
-│   └── diagrams/
-│       └── Handling_missing_values.drawio    ← flowchart for missing data imputation logic
-│
-└── requirements.txt                          ← Python dependencies (for the notebook)
+└── docs/
+    ├── Final_Presentation_4830.pptx          ← project presentation slides
+    ├── Literature_Review.docx                ← literature review on PCA & flight delays
+    ├── Weather_variable_description.docx     ← description of all weather variables
+    └── diagrams/
+        └── Handling_missing_values.drawio    ← flowchart for missing data imputation logic
 ```
 
 ---
