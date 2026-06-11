@@ -45,14 +45,17 @@ yvr-flight-delay-analysis/
 ├── data/
 │   ├── YVR_flight_data_2023-2024_departure.csv
 │   ├── Weather-VAN21-24.csv
-│   └── final_winter_season_data.csv      ← processed dataset used in analysis
+│   └── final_winter_season_data.csv          ← processed dataset used in analysis
 │
 ├── notebooks/
 │   └── DataExtraction.ipynb                  ← data collection, merging & preprocessing
 │
 ├── analysis/
 │   └── Final_Code_4830.Rmd                   ← full statistical analysis in R
-│
+|
+├── output/
+|   └── Final-Code-4830.html                  ← rendered analysis report
+|
 └── docs/
     ├── Final_Presentation_4830.pptx          ← project presentation slides
     ├── Literature_Review.docx                ← literature review on PCA & flight delays
@@ -161,7 +164,7 @@ The datasets were merged on **departure scheduled time (rounded to the hour)** t
 
 ```bash
 # Install dependencies
-pip install -r requirements.txt
+pip install pandas jupyter
 
 # Launch Jupyter
 jupyter notebook notebooks/DataExtraction.ipynb
@@ -196,6 +199,14 @@ jupyter
 
 **R (analysis):**
 See package list above. R version 4.0+ recommended.
+
+---
+
+## 📊 Rendered Analysis
+
+A fully rendered HTML report of the analysis is available in the `output/` folder.
+To view it properly, download `Final-Code-4830.html` and open it in your browser,
+or view it via [GitHub Pages / nbviewer / htmlpreview].
 
 ---
 
