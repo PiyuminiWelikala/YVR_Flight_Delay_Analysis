@@ -1,0 +1,1008 @@
+---
+title: "DANA4830"
+author: "Sandaru / Laura / Julio / Diego"
+date: "2024-11-24"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(reshape2)
+library(nnet)
+library(caTools)
+library(randomForest)
+library(caret)
+library(psych)
+library(GPArotation)
+library(FactoMineR)
+library(factoextra)
+library(pROC)
+library(corrplot)
+```
+
+## Load data set
+
+```{r}
+flight_data <- read.csv("data/final_winter_season_data.csv")
+head(flight_data)
+```
+
+## Explanaoty Data Analysis
+
+```{r}
+df <- flight_data
+
+# EDA
+
+# Dimensions and variables
+eda_dimensions <- paste("The data set contains __", dim(df)[1], "__ observations/rows, and __", dim(df)[2], "__ variables/columns:")
+eda_columns <- paste("-->", names(df))
+
+# Non-numeric columns
+non_numeric_columns <- names(df)[!sapply(df, is.numeric)]
+
+# Numeric columns (data subset)
+numeric_data <- df[sapply(df, is.numeric)]  # Subset of numeric columns
+
+# Categorical columns (data subset)
+categorical_data <- df[, non_numeric_columns]  # Subset of non-numeric (categorical) columns
+
+# Missing values
+eda_na <- paste("There are __", sum(is.na(df)), "__ missing values in the data set.")
+
+# Categorical variable statistics
+cat_summary <- apply(categorical_data, 2, function(col) {paste0("Number of unique levels: ", length(unique(col)))})
+cat_summary <- paste("-->", paste(names(cat_summary), cat_summary, sep = ": "), collapse = "\n")
+
+# Numeric variable statistics
+eda_Var_stats <- paste(
+  paste(
+    sprintf(
+      "%-20s : Range: %-15s | Mean: %-10.2f | SD: %-10.2f | Peaks: %.2f",
+      names(numeric_data),                                              # Variable names
+      sapply(numeric_data, function(col) paste(range(col, na.rm = TRUE), collapse = " - ")),  # Range
+      sapply(numeric_data, mean, na.rm = TRUE),                        # Mean
+      sapply(numeric_data, sd, na.rm = TRUE),                          # Standard Deviation
+      sapply(numeric_data, max, na.rm = TRUE)                          # Maximum (Peak)
+    ),
+    collapse = "\n"
+  )
+)
+
+# Printing the results
+print(eda_dimensions)
+cat("\n")
+print(eda_columns)
+cat("\n\n")
+print(eda_na)
+cat("\n")
+# Non-numeric columns
+cat(length(non_numeric_columns), "Columns with non-numeric variables:\n\n")
+cat(cat_summary) 
+cat("\n\n")
+# Numeric columns
+cat(ncol(numeric_data), "Columns with numeric values:\n\n")
+cat(eda_Var_stats)
+cat("\n\n")
+```
+```{r}
+summary(flight_data)
+```
+
+
+This dataset contains,
+
+Categorical variables: status, airline.name, weather_code
+
+Datetime variables: departure.scheduledTime, departure.estimatedTime, departure.actualTime
+
+Numerical variables: departure.delay, temperature_2m, precipitation, rain, snowfall, cloud_cover, wind_speed_10m, wind_gusts_10m, pressure_msl, surface_pressure, relative_humidity_2m, wind_direction_10m
+
+**Unique values of categorical variables**
+
+```{r}
+table(flight_data$status)
+table(flight_data$weather_code)
+```
+(Need to add meaning of weather codes)
+
+### Univariate Analysis: Distribution plots of numerical features
+
+```{r}
+# Distribution of departure delay
+ggplot(flight_data, aes(x = departure.delay)) +
+  geom_histogram(binwidth = 5, fill = "steelblue", color = "black") +
+  labs(title = "Distribution of Departure Delays", x = "Departure Delay (minutes)", y = "Frequency")
+```
+
+The distribution is highly skewed to the right, with the majority of flights having low delay times. This indicates that most flights have relatively short delays. The tallest bars near zero on the x-axis suggest that the most frequent delay times are clustered around zero. This implies that many flights either depart on time or with minimal delay. The presence of a long tail extending to the right indicates that while most delays are short, there are some flights with significantly longer delays (reaching up to over 1500 minutes). These extreme delays are relatively rare but contribute to the overall distribution.
+
+```{r}
+# Boxplot for departure delay
+boxplot(
+  flight_data$departure.delay,
+  horizontal = TRUE,
+  main = "Horizontal Boxplot: Departure Delay",
+  xlab = "Departure Delay (minutes)",
+  col = "lightblue",    
+  border = "darkblue",  
+  notch = TRUE,         # Notches for median confidence intervals
+  outline = TRUE,       # Show/hide outliers
+  boxwex = 0.5          #  Box width 
+)
+grid(nx = NULL, ny = NULL, col = "gray", lty = "dotted") # Grid
+
+# Boxplot with out outliers
+boxplot(
+  flight_data$departure.delay,
+  horizontal = TRUE,
+  main = "Horizontal Boxplot: Departure Delay",
+  xlab = "Departure Delay (minutes)",
+  col = "lightblue",    
+  border = "darkblue",  
+  notch = TRUE,         # Notches for median confidence intervals
+  outline = F,       # Show/hide outliers
+  boxwex = 0.5          #  Box width 
+)
+grid(nx = NULL, ny = NULL, col = "gray", lty = "dotted") # Grid
+```
+
+```{r}
+# Histograms for weather conditions
+weather_columns <- c("temperature_2m", "precipitation", "rain", "snowfall", "cloud_cover", "wind_speed_10m", "wind_gusts_10m", "pressure_msl", "surface_pressure", "relative_humidity_2m", "wind_direction_10m")
+
+# Reshape data from wide to long format
+plot_data <- flight_data %>%
+  dplyr::select(all_of(weather_columns)) %>%
+  pivot_longer(cols = everything(), names_to = "weather_variable", values_to = "value")
+
+# Create a single histogram plot with density lines for each weather variable using facet_wrap
+ggplot(plot_data, aes(x = value)) +
+  geom_histogram(aes(y = after_stat(density)), fill = "lightgreen", color = "black", bins = 30) +
+  geom_density(color = "blue", size = 1) +
+  facet_wrap(~ weather_variable, scales = "free") +
+  labs(title = "Histograms and Density Plots of Weather Variables",
+       x = "Value",
+       y = "Density") +
+  theme_minimal()
+```
+
+According to the distribution of weather conditions we can identify that precipitation, rain, wind_speed_10m, wind_gusts_10m are skewed to the right while relative_humidity_2m, and cloud_cover are skewed to the left. Also, Bimodal distribution present in wind_direction_10m weather condition while other weather conditions pressure_msl, surface_pressure, has multimodal distribution. Only temperature_2m present normal distribution.
+
+```{r}
+# Create a single boxplot plot for each weather variable using facet_wrap
+ggplot(plot_data, aes(y = value)) +
+  geom_boxplot(fill = "lightblue", color = "black", outlier.color = "red", outlier.size = 1) +
+  facet_wrap(~ weather_variable, scales = "free") +
+  labs(title = "Boxplots of Weather Variables",
+       x = NULL,  # No x-axis label as the categories are faceted
+       y = "Value") +
+  theme_minimal()
+```
+
+The pressure_msl and surface_pressure have narrow spreads, indicating low variability. Variable wind_direction_10m have wider spreads, showing higher variability.
+
+Many variables, such as precipitation, snowfall, rain, wind_gusts_10m, and temperature_2m, show significant outliers beyond the whiskers. These outliers could represent extreme weather conditions.
+
+Variables with high concentrations of outliers (precipitation and rain) might represent rare but impactful weather events. Further consistently low values for variables such as rain or snowfall suggest that most observations involve dry conditions with occasional heavy rain or snow.
+
+**Distribution plot of Numerical variables raw data vs standardized data**
+
+```{r}
+numeric_df <- df[sapply(df, is.numeric)]
+
+# Add row IDs and reshape into tidy format
+tidy_data <- numeric_df %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value")
+
+# Create box plots for each variable
+ggplot(tidy_data, aes(x = Variable, y = Value)) +
+  geom_boxplot(fill = "lightblue", color = "darkblue", outlier.color = "red", outlier.size = 2, width = 0.6) +  # Box plot
+  theme_minimal() +
+  labs(
+    title = "Box Plots of Numeric Variables (Not standardized)",
+    x = "Variables",
+    y = "Values (Standardized)") + theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for readability
+    axis.text = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5)
+  )
+
+# Standardize the dataset (center and scale)
+numeric_df_scaled <- as.data.frame(scale(numeric_df))  # Standardized data
+
+# Add row IDs and reshape into tidy format
+tidy_data <- numeric_df_scaled %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value")
+
+# Create box plots for each variable
+ggplot(tidy_data, aes(x = Variable, y = Value)) +
+  geom_boxplot(fill = "lightblue", color = "darkblue", outlier.color = "red", outlier.size = 2, width = 0.6) +  # Box plot
+  theme_minimal() +
+  labs(
+    title = "Box Plots of Numeric Variables (standardized)",
+    x = "Variables",
+    y = "Values (Standardized)"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for readability
+    axis.text = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5)
+  )
+```
+
+```{r}
+# Subset numeric variables
+numeric_data <- df[, sapply(df, is.numeric)]
+numeric_sd <- scale(numeric_data)  # Standardize numeric data
+
+# Convert data to long format for plotting
+numeric_long <- melt(numeric_data, variable.name = "variable", value.name = "value")
+numeric_long_sd <- melt(as.data.frame(numeric_sd), variable.name = "variable", value.name = "value")
+
+# Function to plot distributions
+plot_distributions <- function(data, title) {
+  ggplot(data, aes(x = value, fill = variable)) +
+    geom_density(alpha = 0.6, show.legend = FALSE) +  # Disable legend for better clarity
+    facet_wrap(~variable, scales = "free", ncol = 3) +  # Increase columns for better spacing
+    theme_minimal() +
+    labs(
+      title = title,
+      x = "Value",
+      y = "Density"
+    ) +
+    theme(
+      strip.text = element_text(size = 12, face = "bold"),  # Larger and bold facet labels
+      plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),  # Center and style the title
+      axis.text.x = element_text(size = 8, angle = 45, hjust = 1),  # Rotate x-axis labels
+      axis.text.y = element_text(size = 9),  # Adjust y-axis label size
+      axis.title = element_text(size = 12),  # Larger axis titles for clarity
+      panel.spacing = unit(1, "lines")  # Add space between facets
+    )
+}
+
+# Plot for raw data
+plot_distributions(numeric_long, "Distribution of Numeric Variables (Raw)")
+
+# Plot for standardized data
+plot_distributions(numeric_long_sd, "Distribution of Numeric Variables (Standardized)")
+```
+
+### Bivariate Analysis: Relationship between flight delay and weather condition
+
+```{r}
+# Boxplot: Delay by Airline
+ggplot(flight_data, aes(x = reorder(airline.name, departure.delay, FUN = median), y = departure.delay)) +
+  geom_boxplot(outlier.colour = "red", fill = "lightblue") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Departure Delay by Airline", x = "Airline", y = "Departure Delay (minutes)")
+```
+
+We can't find any relationship between flight delays and airlines. With this graph we can say that certain airlines does not experience flight delays.
+
+```{r}
+# Select only necessary columns for plotting
+plot_data <- flight_data %>%
+  dplyr::select(departure.delay, temperature_2m, precipitation, rain, snowfall, cloud_cover, 
+         wind_speed_10m, wind_gusts_10m, pressure_msl, surface_pressure, relative_humidity_2m, wind_direction_10m) %>%
+  pivot_longer(cols = -departure.delay, names_to = "weather_variable", values_to = "value")
+
+# Create a scatter plot with facet wrapping for each weather variable
+ggplot(plot_data, aes(x = value, y = departure.delay)) +
+  geom_point(alpha = 0.5, color = "blue") +
+  facet_wrap(~ weather_variable, scales = "free_x") +
+  labs(title = "Scatter Plots of Weather Variables vs. Departure Delay",
+       x = "Weather Variable Value",
+       y = "Departure Delay (minutes)") +
+  theme_minimal()
+```
+
+This plot shows scatter plot for each weather variable against departure delay. There is no noticeable upward or downward trend in any scatter plot, and the points were spread out indicates weak relationship between the weather conditions and departure delay. But we can identify that extreme outliers  between all of the weather variables and delay time. Which might due to extreme weather conditions that correspond to unusually long delays, such as high Atmospheric air pressure and surface pressure, relative humidity and wind.
+
+### Time Series Analysis
+
+```{r}
+flight_data <- flight_data %>%
+  mutate(
+    departure.actualTime = as.POSIXct(departure.actualTime),
+    departure.scheduledTime = as.POSIXct(departure.scheduledTime)
+  )
+
+# Plot delays over time using the existing delay column
+ggplot(flight_data, aes(x = departure.scheduledTime, y = departure.delay)) +
+  geom_line(color = "steelblue") +
+  labs(title = "Average Delay Over Time", x = "Date", y = "Average Delay (minutes)") +
+  scale_x_datetime(date_labels = "%b %d", date_breaks = "1 week") +
+  theme_minimal()
+```
+
+We can identify that two days in Dec 04-11 week, more days in Jan 15-22 week and one day in Feb 12 week have unusually high delays. This can indicate specific times or dates where delays are more common, potentially due to increased air traffic, weather conditions, or other operational factors. Also, there are sudden peaks of delay scould indicate irregular or one-time events that caused delays (e.g., storms, airline strikes, or technical issues). Generally delay is tend to around 0 which means low. 
+
+### Correlation Analysis
+
+```{r}
+# Compute the correlation matrix for numeric columns
+cor_matrix <- cor(df[sapply(df, is.numeric)], use = "complete.obs")
+# print(cor_matrix)
+
+# Generate the heatmap with correlation numbers
+corrplot(cor_matrix, method = "color", type = "upper", 
+         col = colorRampPalette(c("blue", "white", "red"))(200),
+         tl.col = "black", tl.cex = 0.8, 
+         addCoef.col = "black", # Correlation numbers in black
+         number.cex = 0.5, # Size of numbers
+         title = "Correlation Heatmap", 
+         mar = c(0, 0, 1, 0))
+```
+
+No, strong correlation between weather conditions and departure delay.
+
+There are strong correlation between precipitation and rain (0.96), wind_speed_10m and wind_gust_10m (0.95), pressure_msl and surface_pressure (1). 
+
+# PROPOSAL 1: PCA to Predict Flight Delay Severity Categories
+
+## Apply PCA on combined flight and weather data to reduce it to key principal components. 
+
+**1. Standardize the data**
+
+```{r}
+# Select only the numerical columns
+numerical_data <- flight_data[, c('departure.delay', 'temperature_2m', 'precipitation', 'rain', 'snowfall', 'cloud_cover',
+                                  'wind_speed_10m', 'wind_gusts_10m', 'pressure_msl', 'surface_pressure', 'relative_humidity_2m',
+                                  'wind_direction_10m')]
+
+# Standardize the data (important for PCA)
+numerical_data_scaled <- scale(numerical_data)
+```
+
+**2. Apply PCA**
+
+```{r}
+# Perform PCA
+pca_result <- prcomp(numerical_data_scaled, center = TRUE, scale. = TRUE)
+
+# View the summary of the PCA to understand the explained variance
+summary(pca_result)
+```
+
+```{r}
+# View the loadings (contributions of each variable to the principal components)
+pca_result$rotation
+```
+
+*Eigen values*
+
+```{r}
+eval_life <- (pca_result$sdev)^2 # Eigenvalues (variance explained by each PC)
+eval_life
+```
+
+*Total variation*
+
+```{r}
+TV <- eval_life/sum(eval_life)*100 # Percentage of total variance explained by each PC
+TV
+```
+```{r}
+cumsum(TV) # Cumulative variance explained by PCs
+```
+
+PC1 to PC3 are the most important, as they explain more than half of the total variance (57.12%).
+PC4 to PC6 add some explanatory value (up to about 84%), but after that, additional components explain a very minimal amount of variance.
+
+So, I would retain only PC1 to PC6 components as they explain more than 80% of the variance.
+
+**3. Visualize the results**
+
+```{r}
+# Scree Plot
+eigenvalues <- pca_result$sdev^2  # Eigenvalues
+variance_explained <- eigenvalues / sum(eigenvalues) * 100  # Percentage of variance explained
+
+barplot(
+  variance_explained,
+  names.arg = paste0("PC", 1:length(variance_explained)),
+  col = "steelblue",
+  main = "Scree Plot",
+  xlab = "Principal Components",
+  ylab = "Percentage of Variance Explained",
+  border = NA
+)
+grid(nx = NULL, ny = NULL, col = "gray80", lty = "dotted")  # Add gridlines
+box()  # Add a border around the plot
+```
+
+```{r}
+# Set up a black background
+par(bg = "white")  # Set the background color of the plot
+
+# Create the PCA plot
+plot(pca_result$x[, 1], pca_result$x[, 2],  # Coordinates of PCA scores
+     xlab = "PC1", ylab = "PC2",           # Axis labels
+     pch = 16,                             # Solid points
+     col = "blue",                         # Point color for observations (visible on black)
+     main = "PCA Biplot",                  # Title of the plot
+     cex = 0.5,                            # Adjust point size for clarity
+     col.main = "black",                   # Title color
+     col.axis = "black",                   # Axis color
+     col.lab = "black")                    # Label color
+
+# Add variable arrows (loadings)
+arrows(0, 0, pca_result$rotation[, 1] * max(abs(pca_result$x[, 1])),
+       pca_result$rotation[, 2] * max(abs(pca_result$x[, 2])),
+       col = "magenta", length = 0.1, lwd = 2)  # Magenta arrows for variables
+
+# Add variable names
+text(pca_result$rotation[, 1] * max(abs(pca_result$x[, 1])),
+     pca_result$rotation[, 2] * max(abs(pca_result$x[, 2])),
+     labels = rownames(pca_result$rotation), col = "orange", cex = 1, pos = 3)
+
+# Add gridlines (adjusted for black background)
+grid(nx = NULL, ny = NULL, col = "gray50", lty = "dotted")  # Subtle gray gridlines
+
+# Add a border (adjusted for black background)
+box(col = "white")  # White border for contrast
+```
+
+*Kaiser Criterion*
+
+```{r}
+eval_life[eval_life>mean(eval_life)] # PCs that explain more than average variance
+```
+
+The PCs with eigenvalues 3.472351, 1.743684, 1.638159, and 1.322398 explain more variance than an "average" PC.
+
+```{r}
+sub_dat <- as.data.frame(pca_result$x[, 1:2]) 
+
+plot(sub_dat$PC1, sub_dat$PC2, col = "blue", xlab = "PC1", ylab = "PC2", pch =18)  # Plot the first two PCs
+```
+
+## Use the reduced components as input for predictive models to classify delay categories. 
+
+### Prediction (Multinomial Logistic Regression vs. PCA Regression)
+
+1. Define the Delay Categories
+
+First we create the delay categories based on the departure.delay time. 
+
+* No Delay for delays less than or equal to 0 minutes
+* Short Delay for delays between 1 and 15 minutes
+* Long Delay for delays between 16 and 60 minutes
+* Very Long Delay for delays greater than 60 minutes
+
+Note: In this scenario, applying linear regression directly to delay_category may not yield meaningful results because linear regression assumes a continuous numeric response variable, while delay_category is categorical 
+
+```{r}
+flight_data1 <- flight_data[, c('departure.delay', 'temperature_2m', 'precipitation', 'rain', 'snowfall', 'cloud_cover', 'wind_speed_10m', 'wind_gusts_10m', 'pressure_msl', 'surface_pressure', 'relative_humidity_2m', 'wind_direction_10m')]
+```
+
+```{r}
+# Define delay categories based on departure delay
+flight_data1$delay_category <- cut(flight_data1$departure.delay,
+                           breaks = c(-Inf, 0, 15, 60, Inf), 
+                           labels = c("No Delay", "Short Delay", "Long Delay", "Very Long Delay"))
+```
+
+```{r}
+# Ensure delay_category is a factor
+flight_data1$delay_category <- factor(flight_data1$delay_category)
+
+# Remove the departure.delay column
+flight_data1 <- flight_data1[, -1]
+```
+
+**Split the Data into Training and Test Sets**
+
+```{r}
+idx <- floor(0.8*nrow(flight_data1)) # Split 80% for training
+train_idx <- sample(1:nrow(flight_data1), idx) # Randomly sample training data
+
+train_data <- flight_data1[train_idx, ]  # Training set
+test_data <- flight_data1[-train_idx,  ] # Test set
+```
+
+**Multinomial logistic regression**
+
+```{r}
+# Fit a multinomial logistic regression model
+multinom_model <- multinom(delay_category ~ ., data = train_data)
+
+# Summary of the model
+summary(multinom_model)
+```
+
+The coefficient represent the effect of the predictor variable on the log-odds of being in a particular delay category ("Short Delay," "Long Delay," or "Very Long Delay") compared to the baseline category ("No Delay").
+
+Positive coefficients indicate that as the predictor variable increases, the likelihood of being in the specific delay category (compared to the baseline) increases while negative coefficients suggest otherwise.
+
+Important factors can be found in the result:
+
+* Temperature_2m: The coefficients are positive for Short Delay and Long Delay, meaning higher temperatures are associated with these delay categories.
+
+* Precipitation, Rain, and Snowfall: These weather factors have both positive and negative impacts on different delay categories.
+
+* Snowfall has a significant negative coefficient for Short Delay, implying it decreases the likelihood of shorter delays but might increase Very Long Delays.
+
+* Wind Gusts (wind_gusts_10m): Shows positive coefficients, suggesting that stronger wind gusts might increase the likelihood of delays.
+
+* Pressure (pressure_msl) and surface_pressure : It's coefficients vary but seem relatively strong, which could indicate it plays an important role.
+
+The standard errors (listed below the coefficients) indicate the variability in the coefficient estimates. Smaller standard errors mean the coefficient estimates are more precise. For example, the standard error for temperature_2m for "Short Delay" is small (0.005489562), suggesting a more precise estimate.
+
+**PCA for Regression**
+
+```{r}
+summary(pca_result)
+```
+
+Select Principal Components
+
+```{r}
+# Number of principal components to keep
+# Here we select components explaining ~80% of the variance
+cumulative_variance <- cumsum(pca_result$sdev^2 / sum(pca_result$sdev^2))
+num_components <- which(cumulative_variance >= 0.8)[1]
+selected_components <- pca_result$x[, 1:num_components]
+```
+
+Combine Selected Principal Components with the Response Variable
+
+```{r}
+pca_data <- data.frame(selected_components, delay_category = flight_data1$delay_category)
+```
+
+Split the Data into Training and Test Sets
+
+```{r}
+# Use the same indices for train/test split
+train_data_pca <- pca_data[train_idx, ]
+test_data_pca <- pca_data[-train_idx, ]
+```
+
+Apply Multinomial Logistic Regression Model
+
+```{r}
+multinom_model_pca <- multinom(delay_category ~ ., data = train_data_pca)
+summary(multinom_model_pca)
+```
+
+Each coefficient represents the effect of a PC on the log-odds of a particular delay category compared to the baseline.
+Example: For "Short Delay," PC1 has a coefficient of 0.3295, meaning higher values of PC1 increase the likelihood of a "Short Delay."
+
+Standard errors are small compared to coefficients, suggesting reliable estimates.
+
+*Evaluate the Model on the Test Set*
+
+```{r}
+# For logistic regression, predict the delay category and compare with actual
+predictions <- predict(multinom_model_pca, newdata = test_data_pca)
+confusion_matrix <- table(predictions, test_data_pca$delay_category)
+confusion_matrix
+```
+```{r}
+# Sensitivity, Specificity, and Accuracy Calculation
+sensitivity <- numeric()
+specificity <- numeric()
+total_correct <- 0
+total_instances <- sum(confusion_matrix)
+
+for (i in 1:nrow(confusion_matrix)) {
+  # True Positives (TP)
+  TP <- confusion_matrix[i, i]
+  
+  # False Negatives (FN) - sum of the current row excluding TP
+  FN <- sum(confusion_matrix[i, ]) - TP
+  
+  # False Positives (FP) - sum of the current column excluding TP
+  FP <- sum(confusion_matrix[, i]) - TP
+  
+  # True Negatives (TN) - sum of all elements excluding current row and column
+  TN <- total_instances - TP - FN - FP
+  
+  # Sensitivity (Recall)
+  sensitivity[i] <- TP / (TP + FN)
+  
+  # Specificity
+  specificity[i] <- TN / (TN + FP)
+  
+  # Add correct predictions to total
+  total_correct <- total_correct + TP
+}
+
+# Accuracy
+accuracy <- total_correct / total_instances
+
+# Results
+results <- data.frame(
+  Class = rownames(confusion_matrix),
+  Sensitivity = sensitivity,
+  Specificity = specificity
+)
+
+list(Accuracy = accuracy, Results_Per_Class = results)
+```
+
+
+*No Delay* Correct predictions: 457, while 284 observations were misclassified as "Short Delay". Accuracy for "No Delay" seems low, suggesting challenges in distinguishing it from "Short Delay."
+
+*Short Delay* Correct predictions: 3603, Most misclassifications are as "Long Delay" (439) or "No Delay" (134).
+
+*Long Delay* Dominates the dataset (7370 correctly classified), with some confusion with "Short Delay" (406) and minor misclassifications as "Very Long Delay" (38).
+
+*Very Long Delay* High precision for this class (993 correct predictions), with only 58 misclassifications as "Long Delay."
+
+The confusion matrix reflects imbalances in class-specific predictions. For example, "Short Delay" and "Long Delay" dominate the dataset, which may affect predictions for smaller classes like "No Delay" and "Very Long Delay.
+
+# PROPOSAL 2:  Weather Impact Analysis on Delays Using FA
+
+Select weather variables and scale them.
+
+```{r}
+weather_data  <- flight_data[, c('departure.delay', 'temperature_2m', 'precipitation', 'rain', 'snowfall', 'cloud_cover',
+                                 'wind_speed_10m', 'wind_gusts_10m', 'pressure_msl', 'surface_pressure', 'relative_humidity_2m',
+                                 'wind_direction_10m')]
+
+# Standardize the data
+scaled_weather_data <- scale(weather_data)
+```
+
+**Covariance and Correlation Analysis**
+
+```{r}
+cov(weather_data)
+cor(weather_data)
+```
+
+**Correlation adequacy Bartlett's test**
+
+```{r}
+correlations = cor(weather_data)
+cortest.bartlett(correlations, n = nrow(weather_data))
+```
+
+Interpretation: A significant p-value (< 0.05) indicates that the variables are correlated and suitable for factor analysis.
+
+**Sampling adequacy KMO test**
+
+```{r}
+KMO(correlations)
+```
+
+The Kaiser-Meyer-Olkin (KMO) test result suggests low sampling adequacy for the weather variables (with a KMO value of 0.5), which indicates that these variables may not be highly suitable for factor analysis (FA).
+
+**Steps to Improve Factor Analysis Suitability**
+
+Check for Highly Correlated Variables and Remove Redundancies
+
+```{r}
+# Display correlation matrix to identify highly correlated pairs
+print(correlations)
+```
+```{r}
+# Remove one variable from each highly correlated pair
+weather_data_reduced <- weather_data[, -which(colnames(weather_data) %in% c('precipitation', 'wind_gusts_10m', 'pressure_msl'))]
+```
+
+```{r}
+# Recompute correlations with the reduced dataset
+correlations_reduced <- cor(weather_data_reduced)
+
+# Run the KMO test on the reduced dataset
+KMO(correlations_reduced)
+```
+
+KMO test measures the adequacy of sampling for factor analysis, with values > 0.6 indicating that factor analysis is appropriate.
+
+**Determining the Number of Factors**
+
+```{r}
+# fm: What factor method to use: minres, ml, uls, wls, gls, pa
+# fa: show the eigen values for a principal components 
+# fa: you can have fa or pc, or both
+
+nofactors = fa.parallel(weather_data_reduced, fm="ml", fa="fa")
+nofactors$fa.values # eigen values
+```
+
+**Perform Factor Analysis on Reduced Weather Data**
+
+```{r}
+# Conduct Factor Analysis with 4 factors 
+fa_result <- fa(correlations_reduced, nfactors = 4, rotate = "varimax")
+
+# Display factor loadings to understand the contribution of each variable to the factors
+print(fa_result$loadings)
+```
+```{r}
+fa.diagram(fa_result)
+```
+
+* Factor MR1 (Primary Weather Factor):
+
+Key Contributors: temperature_2m (0.552), cloud_cover (0.634), and relative_humidity_2m (0.716).
+
+Interpretation: This factor appears to represent temperature and humidity conditions. High loadings on temperature, cloud cover, and humidity suggest that MR1 relates to general atmospheric conditions.
+
+* Factor MR3:
+
+Key Contributors: wind_speed_10m (0.711) and possibly rain (0.318).
+
+Interpretation: MR3 could represent wind-related weather conditions. The presence of wind_speed_10m as a strong contributor indicates this factor may capture the impact of wind on flight delays.
+
+* Factor MR2:
+
+Key Contributors: wind_direction_10m (0.767).
+
+Interpretation: MR2 seems to represent wind direction specifically. High variance in wind direction could impact flight schedules, especially departures and arrivals.
+
+* Factor MR4:
+
+Key Contributors: snowfall (-0.409).
+
+Interpretation: MR4 appears to capture precipitation-specific weather conditions, particularly snowfall, which can directly impact flights due to runway conditions and visibility.
+
+Variance Explanation
+
+MR1 explains 15.6% of the variance, MR3 explains 10.2%, MR2 explains 8.6%, and MR4 explains 5.0%. Together, these factors account for about 39.4% of the variance in the dataset, meaning they provide a moderate summary of the weather data’s variability.
+
+*This factor analysis suggests that temperature and humidity (MR1), wind speed (MR3), wind direction (MR2), and snowfall (MR4) are the primary weather conditions associated with delay*
+
+```{r}
+# Perform Factor Analysis with Scores
+fa_result <- principal(weather_data, nfactors = 4, rotate = "varimax", scores = TRUE)
+print(fa_result)
+
+# Extract factor scores
+factor_scores <- fa_result$scores
+
+# Add the factor scores to the original dataset
+weather_data_with_factors <- cbind(weather_data, factor_scores)
+
+# Regression Analysis with Factors as Predictors for `departure.delay`
+lm_delay_factors <- lm(departure.delay ~ RC1 + RC2 + RC3 + RC4, data = weather_data_with_factors)
+summary(lm_delay_factors)
+```
+
+The Multiple R-squared of 0.1342 means that the model explains around 13.4% of the variance in departure.delay using these four factors.
+
+Given the Residual Standard Error of 38.54, there remains substantial unexplained variance, which may be due to other factors not captured by the four components or other types of delays (e.g., airline or airport factors).
+
+# Proposal 3 - Perform stepwise regression to identify most important predictors in flight delays
+
+```{r}
+data_clean <- flight_data %>%
+  mutate_if(is.character, as.factor) %>%
+  dplyr::select(-status, -departure.scheduledTime, -departure.estimatedTime, -departure.actualTime, -airline.name)
+```
+
+```{r}
+#full formula
+formula <- departure.delay ~ temperature_2m + precipitation + rain + snowfall + 
+           weather_code + cloud_cover + wind_speed_10m + wind_gusts_10m +
+           pressure_msl + surface_pressure + relative_humidity_2m + wind_direction_10m
+
+#full model
+full_model <- lm(formula, data = data_clean)
+```
+
+```{r}
+#stepwise regression
+library(MASS)
+stepwise_model <- stepAIC(full_model, direction = "both")
+summary(stepwise_model)
+```
+
+The final model after stepwise regression includes 10 predictors.
+
+Only 1.67% of the variation in departure.delay is explained by the predictors. This is very low, indicating a weak model fit.
+
+The low R-squared indicates other factors (e.g., operational delays, human error) likely influence departure.delay.
+
+The recommendation in this case is to use non-linear modeling techniques (e.g., random forests, GAMs) for better predictions if relationships are non-linear.
+
+# Proposal 4 - Correspondance Analysis to identify how categorical variables effects on flight delay category
+
+```{r}
+# Create the CA dataset with respective categories for analysis (Categorization of numerical data)
+
+ca_flight_data <- flight_data %>%
+  mutate(
+    delay_category = cut(departure.delay, 
+                         breaks = c(-Inf, 0, 15, 60, Inf), 
+                         labels = c("No Delay", "Short Delay", "Long Delay", "Very Long Delay")),
+    snowfall_category = cut(snowfall, 
+                            breaks = c(-Inf, 0.01, 0.1, 1, Inf), 
+                            labels = c("None", "Light", "Moderate", "Heavy")),
+    rain_category = cut(rain, 
+                        breaks = c(-Inf, 0.1, 1, 3, Inf), 
+                        labels = c("None", "Light", "Moderate", "Heavy")),
+    wind_speed_category = cut(wind_speed_10m, 
+                               breaks = c(-Inf, 5, 15, 30, Inf), 
+                               labels = c("Calm", "Breezy", "Windy", "Very Windy"))
+  )
+
+ca_flight_data <- ca_flight_data %>%
+  subset(select = c("delay_category", "snowfall_category", "rain_category", "wind_speed_category"))
+
+head(ca_flight_data)
+```
+
+```{r}
+# Function to perform CA and plot for selected variables
+
+perform_CA_plot <- function(ca_flight_data, weather_variable) {
+  
+  # Check if the input weather variable is valid
+  if (!weather_variable %in% c("snowfall_category", "rain_category", "wind_speed_category")) {
+    stop("Invalid weather variable. Choose from 'snowfall_category', 'rain_category', or 'wind_speed_category'.")
+  }
+  
+  # Creation of the Contingency Table
+  ca_contingency_table <- table(ca_flight_data$delay_category, ca_flight_data[[weather_variable]])
+  
+  # Print the Contingency Table
+  print(ca_contingency_table)
+  
+  # Perform Correspondence Analysis (CA)
+  ca_result <- CA(ca_contingency_table, graph = FALSE)
+  
+  # Plot the CA biplot
+  fviz_ca_biplot(ca_result, 
+                 title = paste("CA Biplot: Delay and", gsub("_", " ", weather_variable)),
+                 repel = TRUE, 
+                 col.row = "steelblue", 
+                 col.col = "darkorange")
+}
+
+# Apply the function for selected variables
+perform_CA_plot(ca_flight_data, "snowfall_category")
+perform_CA_plot(ca_flight_data, "rain_category")
+perform_CA_plot(ca_flight_data, "wind_speed_category")
+```
+
+Snowfall: Heavier snowfall has a higher association with longer delays. Most flights with no delay experience no snowfall, but long delays and very long delays increase when snowfall increased from Moderate to Heavy.
+
+Rain: Light rain and Moderate rain have association with delays, although the effect is less pronounced than snowfall, one example is that Long delays are most frequent in Light rain conditions, rather than Moderate or Heavy.
+
+Wind Speed: Breezy and Windy conditions are linked to longer delays, with short delays and long delays being common in these wind conditions.
+
+In summary, snowfall has the strongest association with longer delays, followed by wind speed and rain.
+
+# Classification using Random Forest
+
+1. Define the Delay Categories
+
+First we create the delay categories based on the departure.delay time. 
+
+* No Delay for delays less than or equal to 0 minutes
+* Short Delay for delays between 1 and 15 minutes
+* Long Delay for delays between 16 and 60 minutes
+* Very Long Delay for delays greater than 60 minutes
+
+```{r}
+flight_data_pca <- flight_data
+```
+
+```{r}
+# Define delay categories based on departure delay
+flight_data_pca$delay_category <- cut(flight_data_pca$departure.delay,
+                           breaks = c(-Inf, 0, 15, 60, Inf), 
+                           labels = c("No Delay", "Short Delay", "Long Delay", "Very Long Delay"))
+```
+
+2. Prepare the Reduced Principal Components
+
+```{r}
+# Select the first few principal components (PC1 to PC6)
+pca_data <- as.data.frame(pca_result$x[, 1:6])
+
+# Combine the PCA results with the target variable (delay_category)
+model_data <- data.frame(pca_data, delay_category = flight_data_pca$delay_category)
+```
+
+3. Split the Data into Training and Test Sets
+
+```{r}
+# Set seed for reproducibility
+set.seed(42)
+
+# Split the data (70% for training, 30% for testing)
+split <- sample.split(model_data$delay_category, SplitRatio = 0.7)
+train_data_rf <- subset(model_data, split == TRUE)
+test_data_rf <- subset(model_data, split == FALSE)
+```
+
+4. Train a Predictive Model
+
+```{r}
+# Train a Random Forest model
+rf_model <- randomForest(delay_category ~ ., data = train_data_rf, importance = TRUE)
+
+# View the model summary
+print(rf_model)
+```
+
+5. Make Predictions on the Test Set
+
+```{r}
+# Make predictions
+predictions <- predict(rf_model, test_data_rf)
+
+# Evaluate model performance
+confusion_matrix <- table(Predicted = predictions, Actual = test_data_rf$delay_category)
+print(confusion_matrix)
+```
+
+6. Evaluate Model Performance
+
+```{r}
+# Calculate accuracy, precision, recall, F1-score
+conf_matrix <- confusionMatrix(predictions, test_data_rf$delay_category)
+print(conf_matrix)
+```
+
+* The accuracy is 0.9843 (98.43%), indicating that the model is highly accurate in predicting the delay categories.
+
+* The Kappa value of 0.9728 indicates excellent agreement between the predicted and actual categories beyond chance.
+
+*Sensitivity* measures the ability of the model to correctly identify positive cases for each class. Very high values for all classes, particularly "Long Delay" (99.40%) and "Very Long Delay" (98.74%), indicating strong identification capabilities.
+
+*Specificity* measures the ability to correctly identify negative cases. Values are high for all the classes, suggesting that the model avoids misclassifying other classes as a given class.
+
+Analysis of Performance:
+
+*Strengths:*
+
+* The RF model is highly accurate and consistent, as shown by the high accuracy, Kappa, and class-specific metrics.
+
+* Classes with higher prevalence ("Long Delay" and "Short Delay") are predicted with great precision and recall.
+
+* Less frequent classes ("No Delay" and "Very Long Delay") are also predicted with relatively high accuracy, suggesting that the model generalizes well despite class imbalances.
+
+*Potential Limitations:*
+
+* Some misclassifications exist
+
+* Performance may slightly favor more prevalent classes like "Long Delay."
+
+7. Visualize Feature Importance 
+
+```{r}
+# Get feature importance
+importance(rf_model)
+
+# Plot the importance of components
+varImpPlot(rf_model)
+```
+
+* PC5 and PC6 are the most important components for predicting all delay categories, as they have the highest importance values across "No Delay," "Short Delay," "Long Delay," and "Very Long Delay."
+
+* PC5 and PC6 show the highest MeanDecreaseAccuracy scores (506.7 and 496.5, respectively), indicating they have the greatest impact on overall model performance.
+
+This analysis shows that the RF model relies heavily on specific PCs, likely reflecting key patterns in the dataset.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
