@@ -1,0 +1,10 @@
+data/YVR_flight_data_2023-2024_departure.csv
+data/Weather-VAN21-24.csv
+data/merged_flight_weather_data.csv
+data/winter_season_data.csv
+data/final_flight_weather_data.csv
+output/Final-Code-4830_files/figure-html
+.Rhistory
+.RData
+__pycache__/
+*.ipynb_checkpoints
