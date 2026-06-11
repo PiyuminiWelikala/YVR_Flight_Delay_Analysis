@@ -2,7 +2,7 @@
 
 **Predicting departure delays at Vancouver International Airport using weather data and machine learning**
 
-> A data science project by Sandaru, Laura, Julio & Diego — DANA 4830
+> A data science project by Sandaru, Laura, Julio & Diego
 
 ---
 
@@ -43,10 +43,9 @@ yvr-flight-delay-analysis/
 ├── README.md
 │
 ├── data/
-│   └── (place your datasets here — see Data Sources below)
-│       ├── YVR_flight_data_2023-2024_departure.csv
-│       ├── Weather-VAN21-24.csv
-│       └── final_winter_season_data.csv      ← processed dataset used in analysis
+│   ├── YVR_flight_data_2023-2024_departure.csv
+│   ├── Weather-VAN21-24.csv
+│   └── final_winter_season_data.csv      ← processed dataset used in analysis
 │
 ├── notebooks/
 │   └── DataExtraction.ipynb                  ← data collection, merging & preprocessing
