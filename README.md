@@ -222,5 +222,3 @@ or view it via [GitHub Pages / nbviewer / htmlpreview].
 - Yazdi, M. F., et al. (2020). Flight delay prediction based on deep learning and Levenberg-Marquardt algorithm. *Journal of Big Data, 7*, Article 106.
 
 ---
-
-*DANA 4830 Final Project — November 2024*
